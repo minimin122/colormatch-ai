@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ColorMatch AI - 간단 버전</title>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #FEFCF8 0%, #F7E7E1 100%);
+            min-height: 100vh;
+            color: #3D2E2A;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 40px 20px;
+            background: white;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #D4A5A5 0%, #C4A4C7 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            color: #8B7D7B;
+            margin-bottom: 30px;
+        }
+
+        .start-btn {
+            background: linear-gradient(135deg, #D4A5A5 0%, #E8B4B8 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.1rem;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(212, 165, 165, 0.3);
+            transition: transform 0.2s;
+        }
+
+        .start-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .makeup-app {
+            display: none;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .makeup-app.active {
+            display: block;
+        }
+
+        .app-container {
+            display: flex;
+            gap: 30px;
+            align-items: flex-start;
+        }
+
+        .video-section {
+            flex: 1;
+            position: relative;
+        }
+
+        .video-container {
+            position: relative;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        #video {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            transform: scaleX(-1);
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            margin-top: 15px;
+            border-radius: 10px;
+            font-weight: 500;
+            background: #F5F2ED;
+            color: #8B7D7B;
+        }
+
+        .status.success {
+            background: #E8F5E8;
+            color: #2D5A2D;
+        }
+
+        .status.error {
+            background: #FEE;
+            color: #C66;
+        }
+
+        .controls {
+            flex: 0 0 300px;
+            background: #F5F2ED;
+            padding: 25px;
+            border-radius: 15px;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        .control-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #3D2E2A;
+        }
+
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .color-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .color-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .color-btn.active {
+            border-color: #D4A5A5;
+            box-shadow: 0 0 0 2px rgba(212, 165, 165, 0.3);
+        }
+
+        .slider-group {
+            margin-top: 15px;
+        }
+
+        .slider-label {
+            display: block;
+            font-size: 0.9rem;
+            color: #8B7D7B;
+            margin-bottom: 8px;
+        }
+
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #E8E8E8;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #D4A5A5 0%, #E8B4B8 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(212, 165, 165, 0.4);
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .action-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 25px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .capture-btn {
+            background: linear-gradient(135deg, #D4A5A5 0%, #E8B4B8 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(212, 165, 165, 0.3);
+        }
+
+        .reset-btn {
+            background: white;
+            color: #8B7D7B;
+            border: 2px solid #F7E7E1;
+        }
+
+        .back-btn {
+            background: #F5F2ED;
+            color: #3D2E2A;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        @media (max-width: 768px) {
+            .app-container {
+                flex-direction: column;
+            }
+            
+            .controls {
+                flex: none;
+            }
+        }
+    </style>
+    <!-- DeepAR SDK -->
+    <script src="https://cdn.deepar.ai/js/deepar.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- 홈 화면 -->
+        <div class="hero" id="homeScreen">
+            <h1>ColorMatch AI</h1>
+            <p>실시간 가상 메이크업을 체험해보세요! 🎨</p>
+            <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+                <button class="start-btn" onclick="startApp('basic')">🎨 기본 모드</button>
+                <button class="start-btn" onclick="startApp('deepar')" style="background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);">✨ DeepAR 프리미엄</button>
+            </div>
+        </div>
+
+        <!-- 메이크업 앱 -->
+        <div class="makeup-app" id="makeupApp">
+            <div class="app-container">
+                <div class="video-section">
+                    <div class="video-container">
+                        <video id="video" autoplay playsinline muted></video>
+                        <canvas id="canvas"></canvas>
+                    </div>
+                    <div class="status" id="status">카메라를 초기화하고 있습니다...</div>
+                </div>
+                
+                <div class="controls">
+                    <div class="control-group">
+                        <div class="control-title">💋 립스틱 컬러</div>
+                        <div class="color-grid" id="lipColors">
+                            <div class="color-btn active" data-color="199,92,92" style="background: #C75C5C;"></div>
+                            <div class="color-btn" data-color="240,128,128" style="background: #F08080;"></div>
+                            <div class="color-btn" data-color="255,182,193" style="background: #FFB6C1;"></div>
+                            <div class="color-btn" data-color="220,20,60" style="background: #DC143C;"></div>
+                            <div class="color-btn" data-color="255,105,180" style="background: #FF69B4;"></div>
+                            <div class="color-btn" data-color="139,69,19" style="background: #8B4513;"></div>
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label">립스틱 진하기</label>
+                            <input type="range" class="slider" id="lipIntensity" min="0" max="1" step="0.1" value="0.6">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <div class="control-title">🌸 블러셔 컬러</div>
+                        <div class="color-grid" id="blushColors">
+                            <div class="color-btn active" data-color="255,127,80" style="background: #FF7F50;"></div>
+                            <div class="color-btn" data-color="255,160,122" style="background: #FFA07A;"></div>
+                            <div class="color-btn" data-color="255,228,225" style="background: #FFE4E1;"></div>
+                            <div class="color-btn" data-color="255,182,193" style="background: #FFB6C1;"></div>
+                            <div class="color-btn" data-color="255,105,180" style="background: #FF69B4;"></div>
+                            <div class="color-btn" data-color="219,112,147" style="background: #DB7093;"></div>
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label">블러셔 진하기</label>
+                            <input type="range" class="slider" id="blushIntensity" min="0" max="1" step="0.1" value="0.4">
+                        </div>
+                    </div>
+                    
+                    <div class="action-buttons">
+                        <button class="action-btn capture-btn" onclick="capturePhoto()">📸 사진 저장</button>
+                        <button class="action-btn reset-btn" onclick="resetMakeup()">🔄 리셋</button>
+                        <button class="action-btn back-btn" onclick="goHome()">← 홈으로</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DeepAR API 키
+        const DEEPAR_API_KEY = "7bb30619efaec420030f0ec0f7b6f9eef443a9b76379ab67288e83a4b7cb23362ae102a85f5cfb8af";
+        
+        // 전역 변수
+        let video = null;
+        let canvas = null;
+        let ctx = null;
+        let isRunning = false;
+        let currentMode = 'basic'; // 'basic' 또는 'deepar'
+        let deepAR = null;
+        let currentLipColor = [199, 92, 92];
+        let currentBlushColor = [255, 127, 80];
+        let lipIntensity = 0.6;
+        let blushIntensity = 0.4;
+
+        // 앱 시작
+        async function startApp(mode = 'basic') {
+            try {
+                currentMode = mode;
+                document.getElementById('homeScreen').style.display = 'none';
+                document.getElementById('makeupApp').classList.add('active');
+                
+                if (mode === 'deepar') {
+                    updateStatus('🚀 DeepAR 프리미엄 모드로 초기화 중...', 'normal');
+                    await initializeDeepAR();
+                } else {
+                    updateStatus('카메라 권한을 요청하고 있습니다...', 'normal');
+                    await initializeBasicMode();
+                }
+                
+            } catch (error) {
+                console.error('앱 시작 오류:', error);
+                updateStatus('❌ 초기화에 실패했습니다: ' + error.message, 'error');
+            }
+        }
+
+        // 기본 모드 초기화
+        async function initializeBasicMode() {
+            // 카메라 초기화
+            video = document.getElementById('video');
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            
+            // 카메라 스트림 요청
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { width: 640, height: 480 } 
+            });
+            
+            video.srcObject = stream;
+            
+            // 비디오 로드 대기
+            await new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    video.play();
+                    resolve();
+                };
+            });
+            
+            // 캔버스 크기 설정
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // 컨트롤 이벤트 설정
+            setupControls();
+            
+            // 메이크업 루프 시작
+            isRunning = true;
+            updateStatus('✨ 기본 모드 준비 완료! 컬러를 선택해보세요', 'success');
+            drawLoop();
+        }
+
+        // DeepAR 모드 초기화
+        async function initializeDeepAR() {
+            try {
+                // DeepAR 라이브러리 로딩 확인
+                if (typeof DeepAR === 'undefined') {
+                    updateStatus('⏳ DeepAR 라이브러리 로딩 중...', 'normal');
+                    
+                    // 최대 10초 대기
+                    for (let i = 0; i < 20; i++) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        if (typeof DeepAR !== 'undefined') break;
+                        updateStatus(`⏳ DeepAR 로딩 중... (${i + 1}/20)`, 'normal');
+                    }
+                    
+                    if (typeof DeepAR === 'undefined') {
+                        throw new Error('DeepAR 라이브러리를 로드할 수 없습니다. 인터넷 연결을 확인해주세요.');
+                    }
+                }
+
+                updateStatus('🔑 DeepAR API 키 확인 중...', 'normal');
+                
+                // API 키 확인
+                if (!DEEPAR_API_KEY || DEEPAR_API_KEY.length < 50) {
+                    throw new Error('DeepAR API 키가 올바르지 않습니다.');
+                }
+
+                video = document.getElementById('video');
+                canvas = document.getElementById('canvas');
+                
+                updateStatus('🚀 DeepAR 엔진 초기화 중...', 'normal');
+
+                // DeepAR 초기화
+                deepAR = new DeepAR({
+                    licenseKey: DEEPAR_API_KEY,
+                    canvas: canvas,
+                    deeparWasmPath: 'https://cdn.deepar.ai/js/',
+                    callbacks: {
+                        onInitialize: async () => {
+                            console.log('✅ DeepAR 초기화 완료');
+                            updateStatus('📹 카메라 시작 중...', 'normal');
+                            
+                            try {
+                                await deepAR.startCamera(true);
+                                setupControls();
+                                isRunning = true;
+                                updateStatus('✨ DeepAR 프리미엄 모드 준비 완료!', 'success');
+                            } catch (cameraError) {
+                                console.error('DeepAR 카메라 오류:', cameraError);
+                                updateStatus('❌ 카메라 접근이 거부되었습니다.', 'error');
+                            }
+                        },
+                        onCameraPermissionAsked: () => {
+                            updateStatus('📹 카메라 권한을 허용해주세요', 'normal');
+                        },
+                        onCameraPermissionGranted: () => {
+                            updateStatus('✅ 카메라 권한이 허용되었습니다', 'success');
+                        },
+                        onCameraPermissionDenied: () => {
+                            updateStatus('❌ 카메라 권한이 거부되었습니다', 'error');
+                        },
+                        onFaceVisibilityChanged: (visible) => {
+                            if (visible) {
+                                updateStatus('👤 얼굴이 감지되었습니다! DeepAR 추적 활성화', 'success');
+                            } else {
+                                updateStatus('얼굴을 화면 중앙에 맞춰주세요', 'normal');
+                            }
+                        },
+                        onError: (error) => {
+                            console.error('DeepAR 오류:', error);
+                            updateStatus(`❌ DeepAR 오류: ${error.toString()}`, 'error');
+                        }
+                    }
+                });
+
+            } catch (error) {
+                console.error('DeepAR 초기화 오류:', error);
+                updateStatus(`❌ DeepAR 초기화 실패: ${error.message}`, 'error');
+                
+                // 기본 모드로 폴백
+                setTimeout(async () => {
+                    updateStatus('🔄 기본 모드로 전환 중...', 'normal');
+                    currentMode = 'basic';
+                    await initializeBasicMode();
+                }, 3000);
+            }
+        }
+
+        // 메이크업 그리기 루프 (기본 모드용)
+        function drawLoop() {
+            if (!isRunning || currentMode !== 'basic') return;
+            
+            // 캔버스 클리어
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 간단한 메이크업 효과 (화면 중앙에)
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            
+            // 립스틱 영역
+            if (lipIntensity > 0) {
+                ctx.save();
+                ctx.globalAlpha = lipIntensity;
+                ctx.fillStyle = `rgb(${currentLipColor[0]}, ${currentLipColor[1]}, ${currentLipColor[2]})`;
+                ctx.beginPath();
+                ctx.ellipse(centerX, centerY + 60, 40, 20, 0, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.restore();
+            }
+            
+            // 블러셔 영역
+            if (blushIntensity > 0) {
+                ctx.save();
+                ctx.globalAlpha = blushIntensity * 0.6;
+                
+                const gradient1 = ctx.createRadialGradient(centerX - 100, centerY - 20, 0, centerX - 100, centerY - 20, 35);
+                gradient1.addColorStop(0, `rgba(${currentBlushColor[0]}, ${currentBlushColor[1]}, ${currentBlushColor[2]}, 0.8)`);
+                gradient1.addColorStop(1, `rgba(${currentBlushColor[0]}, ${currentBlushColor[1]}, ${currentBlushColor[2]}, 0)`);
+                
+                const gradient2 = ctx.createRadialGradient(centerX + 100, centerY - 20, 0, centerX + 100, centerY - 20, 35);
+                gradient2.addColorStop(0, `rgba(${currentBlushColor[0]}, ${currentBlushColor[1]}, ${currentBlushColor[2]}, 0.8)`);
+                gradient2.addColorStop(1, `rgba(${currentBlushColor[0]}, ${currentBlushColor[1]}, ${currentBlushColor[2]}, 0)`);
+                
+                // 왼쪽 볼
+                ctx.fillStyle = gradient1;
+                ctx.beginPath();
+                ctx.arc(centerX - 100, centerY - 20, 35, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                // 오른쪽 볼
+                ctx.fillStyle = gradient2;
+                ctx.beginPath();
+                ctx.arc(centerX + 100, centerY - 20, 35, 0, 2 * Math.PI);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+            
+            requestAnimationFrame(drawLoop);
+        }
+
+        // 컨트롤 설정
+        function setupControls() {
+            // 립스틱 컬러 선택
+            document.querySelectorAll('#lipColors .color-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('#lipColors .color-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    currentLipColor = this.dataset.color.split(',').map(Number);
+                });
+            });
+
+            // 블러셔 컬러 선택
+            document.querySelectorAll('#blushColors .color-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('#blushColors .color-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    currentBlushColor = this.dataset.color.split(',').map(Number);
+                });
+            });
+
+            // 슬라이더
+            document.getElementById('lipIntensity').addEventListener('input', function() {
+                lipIntensity = parseFloat(this.value);
+            });
+
+            document.getElementById('blushIntensity').addEventListener('input', function() {
+                blushIntensity = parseFloat(this.value);
+            });
+        }
+
+        // 상태 업데이트
+        function updateStatus(message, type = 'normal') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status';
+            if (type !== 'normal') {
+                status.classList.add(type);
+            }
+        }
+
+        // 사진 캡처
+        function capturePhoto() {
+            if (currentMode === 'deepar' && deepAR) {
+                // DeepAR 캡처
+                deepAR.takeScreenshot().then(function(screenshot) {
+                    const a = document.createElement('a');
+                    a.href = screenshot;
+                    a.download = `deepar-makeup-${Date.now()}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    
+                    updateStatus('📸 DeepAR 사진이 저장되었습니다!', 'success');
+                    setTimeout(() => updateStatus('✨ DeepAR 프리미엄 모드 준비 완료!', 'success'), 2000);
+                });
+            } else {
+                // 기본 모드 캡처
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                tempCanvas.width = video.videoWidth;
+                tempCanvas.height = video.videoHeight;
+                
+                // 비디오 이미지 그리기 (미러 효과)
+                tempCtx.save();
+                tempCtx.scale(-1, 1);
+                tempCtx.drawImage(video, -tempCanvas.width, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.restore();
+                
+                // 메이크업 효과 추가
+                tempCtx.drawImage(canvas, 0, 0);
+                
+                // 다운로드
+                tempCanvas.toBlob(function(blob) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `basic-makeup-${Date.now()}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    updateStatus('📸 기본 모드 사진이 저장되었습니다!', 'success');
+                    setTimeout(() => updateStatus('✨ 기본 모드 준비 완료! 컬러를 선택해보세요', 'success'), 2000);
+                }, 'image/png');
+            }
+        }
+
+        // 메이크업 리셋
+        function resetMakeup() {
+            lipIntensity = 0;
+            blushIntensity = 0;
+            document.getElementById('lipIntensity').value = 0;
+            document.getElementById('blushIntensity').value = 0;
+            
+            setTimeout(() => {
+                lipIntensity = 0.6;
+                blushIntensity = 0.4;
+                document.getElementById('lipIntensity').value = 0.6;
+                document.getElementById('blushIntensity').value = 0.4;
+            }, 500);
+        }
+
+        // 홈으로 돌아가기
+        function goHome() {
+            isRunning = false;
+            
+            if (currentMode === 'deepar' && deepAR) {
+                deepAR.shutdown();
+                deepAR = null;
+            }
+            
+            if (video && video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+            
+            currentMode = 'basic';
+            document.getElementById('makeupApp').classList.remove('active');
+            document.getElementById('homeScreen').style.display = 'block';
+        }
+
+        console.log('✅ ColorMatch AI 하이브리드 버전 준비 완료!');
+        console.log('🔑 DeepAR API Key:', DEEPAR_API_KEY.substring(0, 20) + '...');
+        console.log('⌨️ 단축키: ESC=홈, C=캡처, R=리셋');
+        console.log('🎯 기본 모드: 즉시 작동, DeepAR 모드: 고급 얼굴 추적');
+    </script>
+</body>
+</html>
