@@ -303,8 +303,108 @@
     <script crossorigin="anonymous" src="https://unpkg.com/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script crossorigin="anonymous" src="https://unpkg.com/@mediapipe/face_mesh/face_mesh.js"></script>
     
-    <!-- DeepAR SDK -->
-    <script src="https://cdn.deepar.ai/js/deepar.js"></script>
+    <!-- DeepAR SDK - 여러 방법으로 로딩 시도 -->
+    <script>
+        // DeepAR 라이브러리 강력한 로딩 시스템
+        window.deepARLoadAttempts = [];
+        window.deepARLoaded = false;
+        
+        function loadDeepARScript(url, timeout = 15000) {
+            return new Promise(function(resolve, reject) {
+                const script = document.createElement('script');
+                script.src = url;
+                script.crossOrigin = 'anonymous';
+                
+                const timer = setTimeout(function() {
+                    script.remove();
+                    reject(new Error('Timeout loading: ' + url));
+                }, timeout);
+                
+                script.onload = function() {
+                    clearTimeout(timer);
+                    console.log('✅ DeepAR loaded successfully from:', url);
+                    resolve(url);
+                };
+                
+                script.onerror = function() {
+                    clearTimeout(timer);
+                    script.remove();
+                    reject(new Error('Failed to load: ' + url));
+                };
+                
+                document.head.appendChild(script);
+            });
+        }
+        
+        async function loadDeepAR() {
+            // 시도할 DeepAR CDN 목록 (더 많은 옵션)
+            const cdnUrls = [
+                // 공식 CDN
+                'https://cdn.deepar.ai/js/deepar.js',
+                
+                // npm CDN들
+                'https://unpkg.com/deepar@5.5.4/js/deepar.js',
+                'https://cdn.jsdelivr.net/npm/deepar@5.5.4/js/deepar.js',
+                'https://unpkg.com/deepar@latest/js/deepar.js',
+                'https://cdn.jsdelivr.net/npm/deepar@latest/js/deepar.js',
+                
+                // GitHub CDN
+                'https://cdn.jsdelivr.net/gh/DeepARSDK/quickstart-web-js@main/js/deepar.js',
+                
+                // 대체 CDN
+                'https://cdnjs.cloudflare.com/ajax/libs/deepar/5.5.4/deepar.min.js'
+            ];
+            
+            console.log('🚀 DeepAR 로딩 시작. 시도할 CDN:', cdnUrls.length + '개');
+            
+            for (let i = 0; i < cdnUrls.length; i++) {
+                const url = cdnUrls[i];
+                console.log('📡 시도 중 (' + (i + 1) + '/' + cdnUrls.length + '):', url);
+                
+                try {
+                    window.deepARLoadAttempts.push({ url: url, status: 'trying' });
+                    
+                    await loadDeepARScript(url, 10000); // 10초 타임아웃
+                    
+                    // 로딩 성공 확인
+                    if (typeof DeepAR !== 'undefined') {
+                        window.deepARLoaded = true;
+                        window.deepARLoadAttempts[i].status = 'success';
+                        console.log('🎉 DeepAR 로딩 성공!', url);
+                        return;
+                    }
+                    
+                } catch (error) {
+                    window.deepARLoadAttempts[i].status = 'failed';
+                    window.deepARLoadAttempts[i].error = error.message;
+                    console.warn('❌ 실패:', url, error.message);
+                    continue;
+                }
+            }
+            
+            // 모든 CDN 실패
+            console.error('💥 모든 DeepAR CDN 로딩 실패');
+            console.table(window.deepARLoadAttempts);
+            throw new Error('All DeepAR CDN attempts failed');
+        }
+        
+        // DeepAR 로딩 시작 (페이지 로드 즉시)
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('📚 페이지 로드 완료. DeepAR 로딩 시작...');
+            
+            loadDeepAR().then(function() {
+                console.log('✅ DeepAR 준비 완료');
+            }).catch(function(error) {
+                console.error('💥 DeepAR 로딩 최종 실패:', error);
+                
+                // 네트워크 진단
+                console.log('🔍 네트워크 상태:', navigator.onLine ? '온라인' : '오프라인');
+                console.log('🔍 사용자 에이전트:', navigator.userAgent);
+                console.log('🔍 현재 프로토콜:', location.protocol);
+                console.log('🔍 현재 호스트:', location.host);
+            });
+        });
+    </script>
 </head>
 <body>
     <div class="container">
@@ -378,8 +478,8 @@
     </div>
 
     <script>
-        // DeepAR API 키
-        const DEEPAR_API_KEY = "3969e67bd55ef187394f0e53d8267334d8fbb9bbecd5ba45e103ee10ec1fc89291d69622791cc735";
+        // DeepAR API 키 (새로운 키 - 올바른 도메인)
+        const DEEPAR_API_KEY = "a9664730845da289f0aa249f8a612e950962d4135520b8fe30c51af6ad288cd88a92445c078abbe4";
         
         // 전역 변수
         let video = null;
@@ -555,37 +655,95 @@
             }
         }
 
-        // DeepAR 모드 초기화
+        // DeepAR 모드 초기화 (강화된 디버깅)
         async function initializeDeepAR() {
             try {
-                updateStatus('🔍 DeepAR 환경 확인 중...', 'deepar');
+                updateStatus('🔍 DeepAR 환경 분석 중...', 'deepar');
                 
+                // 상세한 환경 정보 수집
+                console.log('🌐 브라우저 정보:', {
+                    userAgent: navigator.userAgent,
+                    online: navigator.onLine,
+                    protocol: location.protocol,
+                    host: location.host,
+                    href: location.href
+                });
+
                 // 브라우저 호환성 확인
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                     throw new Error('이 브라우저는 카메라를 지원하지 않습니다.');
                 }
 
-                // DeepAR 라이브러리 로딩 확인
-                updateStatus('⏳ DeepAR 라이브러리 로딩 중...', 'deepar');
-                
-                for (let i = 0; i < 30; i++) {
-                    if (typeof DeepAR !== 'undefined') {
-                        updateStatus('✅ DeepAR 라이브러리 로드 완료', 'deepar');
-                        break;
-                    }
-                    updateStatus('⏳ DeepAR 로딩 중... (' + (i + 1) + '/30)', 'deepar');
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-                
-                if (typeof DeepAR === 'undefined') {
-                    throw new Error('DeepAR 라이브러리를 로드할 수 없습니다. 인터넷 연결 상태를 확인해주세요.');
+                // HTTPS 확인 (더 관대하게)
+                if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+                    console.warn('⚠️ HTTP 환경에서 DeepAR 실행 중. HTTPS 권장.');
                 }
 
-                updateStatus('🔑 DeepAR API 키 검증 중...', 'deepar');
+                // DeepAR 로딩 상태 상세 확인
+                updateStatus('⏳ DeepAR 라이브러리 상태 확인 중...', 'deepar');
                 
-                // API 키 검증
-                console.log('DeepAR API Key 길이:', DEEPAR_API_KEY.length);
-                console.log('DeepAR API Key 첫 20자:', DEEPAR_API_KEY.substring(0, 20));
+                console.log('📊 DeepAR 로딩 시도 기록:', window.deepARLoadAttempts);
+                
+                // 더 긴 대기 시간과 더 자세한 체크
+                let maxWaitTime = 30; // 30초
+                let checkInterval = 1000; // 1초마다 체크
+                
+                for (let i = 0; i < maxWaitTime; i++) {
+                    // 다양한 방법으로 DeepAR 존재 확인
+                    const deepARExists = (
+                        window.deepARLoaded === true ||
+                        typeof DeepAR !== 'undefined' ||
+                        typeof window.DeepAR !== 'undefined' ||
+                        (window.DeepAR && typeof window.DeepAR === 'function')
+                    );
+                    
+                    if (deepARExists) {
+                        updateStatus('✅ DeepAR 라이브러리 발견!', 'deepar');
+                        console.log('🎯 DeepAR 발견됨:', typeof DeepAR, typeof window.DeepAR);
+                        break;
+                    }
+                    
+                    // 진행 상황 표시
+                    if (i % 5 === 0) { // 5초마다 업데이트
+                        const progress = Math.round((i / maxWaitTime) * 100);
+                        updateStatus('⏳ DeepAR 대기 중... ' + progress + '% (' + (i + 1) + '/' + maxWaitTime + '초)', 'deepar');
+                        
+                        // 중간 점검
+                        if (i === 30) {
+                            console.log('🔄 30초 경과. 다시 로딩 시도...');
+                            loadDeepAR().catch(function(e) { console.log('재시도 실패:', e); });
+                        }
+                    }
+                    
+                    await new Promise(resolve => setTimeout(resolve, checkInterval));
+                }
+                
+                // 최종 DeepAR 확인
+                const DeepARClass = DeepAR || window.DeepAR;
+                if (!DeepARClass || typeof DeepARClass !== 'function') {
+                    // 상세한 실패 보고
+                    console.error('💥 DeepAR 최종 확인 실패');
+                    console.error('📊 최종 상태:', {
+                        'window.deepARLoaded': window.deepARLoaded,
+                        'typeof DeepAR': typeof DeepAR,
+                        'typeof window.DeepAR': typeof window.DeepAR,
+                        'navigator.onLine': navigator.onLine,
+                        'loadAttempts': window.deepARLoadAttempts?.length || 0
+                    });
+                    
+                    throw new Error('DeepAR 클래스를 찾을 수 없습니다. CDN 차단이나 네트워크 문제일 수 있습니다.');
+                }
+
+                updateStatus('🔑 DeepAR API 키 확인 중...', 'deepar');
+                
+                // API 키 상세 검증
+                console.log('🔑 API 키 정보:', {
+                    length: DEEPAR_API_KEY.length,
+                    first20: DEEPAR_API_KEY.substring(0, 20),
+                    last20: DEEPAR_API_KEY.substring(-20),
+                    isString: typeof DEEPAR_API_KEY === 'string',
+                    isEmpty: !DEEPAR_API_KEY || DEEPAR_API_KEY.trim() === ''
+                });
                 
                 if (!DEEPAR_API_KEY || DEEPAR_API_KEY.length < 70) {
                     throw new Error('DeepAR API 키가 올바르지 않습니다. 현재 길이: ' + DEEPAR_API_KEY.length + ', 필요: 70자 이상');
@@ -593,65 +751,98 @@
 
                 canvas = document.getElementById('canvas');
                 
-                updateStatus('🚀 DeepAR 엔진 초기화 중...', 'deepar');
+                if (!canvas) {
+                    throw new Error('캔버스 요소를 찾을 수 없습니다.');
+                }
 
-                // DeepAR 초기화
-                deepAR = new DeepAR({
-                    licenseKey: DEEPAR_API_KEY,
-                    canvas: canvas,
-                    deeparWasmPath: 'https://cdn.deepar.ai/js/',
-                    callbacks: {
-                        onInitialize: function() {
-                            console.log('✅ DeepAR 초기화 완료');
-                            updateStatus('📹 카메라 시작 중...', 'deepar');
-                            
-                            // 카메라 시작
-                            deepAR.startCamera(true).then(function() {
-                                setupControls();
-                                isRunning = true;
-                                updateStatus('🎉 DeepAR 프리미엄 모드 완전 활성화!', 'success');
-                            }).catch(function(cameraError) {
-                                console.error('DeepAR 카메라 오류:', cameraError);
-                                updateStatus('❌ 카메라 접근 실패. 권한을 확인해주세요.', 'error');
-                            });
-                        },
-                        onCameraPermissionAsked: function() {
-                            updateStatus('📹 카메라 권한을 허용해주세요', 'deepar');
-                        },
-                        onCameraPermissionGranted: function() {
-                            updateStatus('✅ 카메라 권한 허용됨', 'deepar');
-                        },
-                        onCameraPermissionDenied: function() {
-                            updateStatus('❌ 카메라 권한이 거부되었습니다', 'error');
-                        },
-                        onFaceVisibilityChanged: function(visible) {
-                            if (visible) {
-                                updateStatus('👤 얼굴 감지! DeepAR 고급 추적 활성화', 'success');
-                            } else {
-                                updateStatus('👀 얼굴을 화면 중앙에 맞춰주세요', 'deepar');
-                            }
-                        },
-                        onVideoStarted: function() {
-                            console.log('✅ DeepAR 비디오 시작됨');
-                        },
-                        onError: function(error) {
-                            console.error('DeepAR 런타임 오류:', error);
-                            updateStatus('❌ DeepAR 오류: ' + error, 'error');
-                            
-                            // 구체적 오류 메시지
-                            if (error.includes('license') || error.includes('key')) {
-                                updateStatus('🔑 라이선스 오류: API 키를 확인해주세요', 'error');
-                            } else if (error.includes('camera')) {
-                                updateStatus('📹 카메라 오류: 다른 앱에서 사용 중일 수 있습니다', 'error');
+                updateStatus('🚀 DeepAR 객체 생성 중...', 'deepar');
+
+                // DeepAR 초기화 (매우 안전한 방식)
+                try {
+                    console.log('🎯 DeepAR 생성자 호출...');
+                    
+                    deepAR = new DeepARClass({
+                        licenseKey: DEEPAR_API_KEY,
+                        canvas: canvas,
+                        deeparWasmPath: 'https://cdn.deepar.ai/js/',
+                        callbacks: {
+                            onInitialize: function() {
+                                console.log('🎉 DeepAR 초기화 콜백 호출됨');
+                                updateStatus('📹 카메라 권한 요청 중...', 'deepar');
+                                
+                                // 카메라 시작
+                                deepAR.startCamera(true).then(function() {
+                                    console.log('📹 DeepAR 카메라 시작 성공');
+                                    setupControls();
+                                    isRunning = true;
+                                    updateStatus('🎉 DeepAR 프리미엄 모드 완전 활성화!', 'success');
+                                }).catch(function(cameraError) {
+                                    console.error('📹 DeepAR 카메라 오류:', cameraError);
+                                    updateStatus('❌ 카메라 접근 실패: ' + cameraError.message, 'error');
+                                });
+                            },
+                            onCameraPermissionAsked: function() {
+                                console.log('📹 카메라 권한 요청됨');
+                                updateStatus('📹 카메라 권한을 허용해주세요', 'deepar');
+                            },
+                            onCameraPermissionGranted: function() {
+                                console.log('✅ 카메라 권한 허용됨');
+                                updateStatus('✅ 카메라 권한 허용됨', 'deepar');
+                            },
+                            onCameraPermissionDenied: function() {
+                                console.error('❌ 카메라 권한 거부됨');
+                                updateStatus('❌ 카메라 권한이 거부되었습니다', 'error');
+                            },
+                            onFaceVisibilityChanged: function(visible) {
+                                console.log('👤 얼굴 가시성 변경:', visible);
+                                if (visible) {
+                                    updateStatus('👤 얼굴 감지! DeepAR 고급 추적 활성화', 'success');
+                                } else {
+                                    updateStatus('👀 얼굴을 화면 중앙에 맞춰주세요', 'deepar');
+                                }
+                            },
+                            onVideoStarted: function() {
+                                console.log('🎬 DeepAR 비디오 스트림 시작됨');
+                            },
+                            onError: function(error) {
+                                console.error('💥 DeepAR 런타임 오류:', error);
+                                updateStatus('❌ DeepAR 오류: ' + error, 'error');
+                                
+                                // 구체적 오류 분석
+                                if (error.includes('license') || error.includes('key') || error.includes('invalid')) {
+                                    updateStatus('🔑 라이선스 오류: API 키나 도메인을 확인해주세요', 'error');
+                                } else if (error.includes('camera')) {
+                                    updateStatus('📹 카메라 오류: 다른 앱에서 사용 중이거나 권한이 없습니다', 'error');
+                                } else if (error.includes('wasm') || error.includes('module')) {
+                                    updateStatus('🔧 WebAssembly 로딩 오류: 브라우저 호환성 문제', 'error');
+                                }
                             }
                         }
-                    }
-                });
+                    });
+                    
+                    console.log('✅ DeepAR 객체 생성 성공:', deepAR);
+                    
+                } catch (constructorError) {
+                    console.error('💥 DeepAR 생성자 오류:', constructorError);
+                    throw new Error('DeepAR 객체 생성 실패: ' + constructorError.message);
+                }
 
             } catch (error) {
-                console.error('DeepAR 초기화 실패:', error);
+                console.error('💥 DeepAR 초기화 완전 실패:', error);
                 updateStatus('❌ DeepAR 초기화 실패: ' + error.message, 'error');
                 
+                // 실패 시 상세 진단 정보 출력
+                console.log('🔍 실패 진단 정보:', {
+                    deepARLoaded: window.deepARLoaded,
+                    deepARType: typeof DeepAR,
+                    windowDeepARType: typeof window.DeepAR,
+                    onlineStatus: navigator.onLine,
+                    protocol: location.protocol,
+                    attempts: window.deepARLoadAttempts,
+                    apiKeyLength: DEEPAR_API_KEY ? DEEPAR_API_KEY.length : 0
+                });
+                
+                // 기본 모드로 자동 전환 (5초 후)
                 setTimeout(async function() {
                     updateStatus('🔄 기본 모드(MediaPipe)로 자동 전환 중...', 'normal');
                     currentMode = 'basic';
@@ -659,12 +850,12 @@
                     // 모드 표시기 업데이트
                     const modeIndicator = document.getElementById('modeIndicator');
                     const appTitle = document.getElementById('appTitle');
-                    modeIndicator.textContent = '🎨 기본 모드 (자동 전환됨)';
+                    modeIndicator.textContent = '🎨 기본 모드 (DeepAR 실패로 전환됨)';
                     modeIndicator.className = 'mode-indicator basic';
-                    appTitle.textContent = '기본 가상 메이크업';
+                    appTitle.textContent = '기본 가상 메이크업 (MediaPipe)';
                     
                     await initializeBasicMode();
-                }, 3000);
+                }, 5000);
             }
         }
 
