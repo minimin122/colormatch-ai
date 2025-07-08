@@ -297,6 +297,12 @@
         }
     </style>
     
+    <!-- MediaPipe Libraries -->
+    <script crossorigin="anonymous" src="https://unpkg.com/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/@mediapipe/control_utils/control_utils.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/@mediapipe/face_mesh/face_mesh.js"></script>
+    
     <!-- DeepAR SDK -->
     <script src="https://cdn.deepar.ai/js/deepar.js"></script>
 </head>
@@ -380,15 +386,23 @@
         let canvas = null;
         let ctx = null;
         let isRunning = false;
-        let currentMode = 'basic'; // 'basic' 또는 'deepar'
+        let currentMode = 'basic';
         let deepAR = null;
+        let faceMesh = null;
+        let camera = null;
         let currentLipColor = [199, 92, 92];
         let currentBlushColor = [255, 127, 80];
         let lipIntensity = 0.6;
         let blushIntensity = 0.4;
 
+        // 얼굴 랜드마크 인덱스 (MediaPipe)
+        const LIPS_UPPER = [61, 84, 17, 314, 405, 320, 307, 375, 321, 308, 324, 318];
+        const LIPS_LOWER = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 415, 310, 311, 312, 13, 82, 81, 80, 78];
+        const LEFT_CHEEK = [116, 117, 118, 119, 120, 121, 126, 142, 36, 205, 206, 207, 213, 192, 147, 123];
+        const RIGHT_CHEEK = [345, 346, 347, 348, 349, 350, 451, 452, 453, 464, 435, 410, 454, 323, 361, 340];
+
         // 앱 시작
-        async function startApp(mode = 'basic') {
+        async function startApp(mode) {
             try {
                 currentMode = mode;
                 document.getElementById('homeScreen').style.display = 'none';
@@ -418,119 +432,352 @@
             }
         }
 
-        // 기본 모드 초기화
+        // 기본 모드 초기화 (MediaPipe)
         async function initializeBasicMode() {
-            video = document.getElementById('video');
-            canvas = document.getElementById('canvas');
-            ctx = canvas.getContext('2d');
-            
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { width: 640, height: 480 } 
-            });
-            
-            video.srcObject = stream;
-            
-            await new Promise((resolve) => {
-                video.onloadedmetadata = () => {
-                    video.play();
-                    resolve();
-                };
-            });
-            
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            
-            setupControls();
-            isRunning = true;
-            updateStatus('✨ 기본 모드 준비 완료! 컬러를 선택해보세요', 'success');
-            drawLoop();
+            try {
+                updateStatus('📚 MediaPipe 라이브러리 확인 중...', 'normal');
+                
+                // MediaPipe 라이브러리 로딩 대기
+                let attempts = 0;
+                const maxAttempts = 20;
+                
+                while (attempts < maxAttempts) {
+                    if (typeof FaceMesh !== 'undefined' || typeof window.FaceMesh !== 'undefined') {
+                        break;
+                    }
+                    
+                    updateStatus('🔄 MediaPipe 로딩 대기... (' + (attempts + 1) + '/' + maxAttempts + ')', 'normal');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    attempts++;
+                }
+
+                let FaceMeshClass = FaceMesh || window.FaceMesh;
+                
+                if (!FaceMeshClass) {
+                    updateStatus('⚠️ MediaPipe 로드 실패. 기본 카메라 모드로 전환 중...', 'normal');
+                    await initializeSimpleMode();
+                    return;
+                }
+
+                updateStatus('🤖 AI 모델 초기화 중...', 'normal');
+
+                faceMesh = new FaceMeshClass({
+                    locateFile: function(file) {
+                        return 'https://unpkg.com/@mediapipe/face_mesh/' + file;
+                    }
+                });
+
+                faceMesh.setOptions({
+                    maxNumFaces: 1,
+                    refineLandmarks: true,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                faceMesh.onResults(onMediaPipeResults);
+
+                updateStatus('📹 카메라 초기화 중...', 'normal');
+
+                video = document.getElementById('video');
+                canvas = document.getElementById('canvas');
+                ctx = canvas.getContext('2d');
+
+                let CameraClass = Camera || window.Camera;
+                
+                if (!CameraClass) {
+                    updateStatus('📷 기본 카메라 모드로 초기화...', 'normal');
+                    await initializeSimpleMode();
+                    return;
+                }
+
+                camera = new CameraClass(video, {
+                    onFrame: async function() {
+                        if (isRunning && faceMesh && currentMode === 'basic') {
+                            await faceMesh.send({ image: video });
+                        }
+                    },
+                    width: 640,
+                    height: 480
+                });
+
+                await camera.start();
+
+                setTimeout(function() {
+                    if (video.videoWidth > 0 && video.videoHeight > 0) {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        setupControls();
+                        isRunning = true;
+                        updateStatus('✨ MediaPipe 준비 완료! 얼굴을 화면에 맞춰주세요', 'success');
+                    } else {
+                        updateStatus('❌ 카메라 초기화에 실패했습니다.', 'error');
+                    }
+                }, 2000);
+
+            } catch (error) {
+                console.error('MediaPipe 초기화 오류:', error);
+                updateStatus('🔄 기본 카메라 모드로 대체 초기화 중...', 'normal');
+                await initializeSimpleMode();
+            }
+        }
+
+        // 간단한 카메라 모드 (MediaPipe 없이)
+        async function initializeSimpleMode() {
+            try {
+                video = document.getElementById('video');
+                canvas = document.getElementById('canvas');
+                ctx = canvas.getContext('2d');
+
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
+                
+                video.srcObject = stream;
+                
+                await new Promise(function(resolve) {
+                    video.onloadedmetadata = function() {
+                        video.play();
+                        resolve();
+                    };
+                });
+                
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                setupControls();
+                isRunning = true;
+                updateStatus('✨ 기본 모드 준비 완료! (얼굴 추적 없음)', 'success');
+                drawSimpleLoop();
+
+            } catch (error) {
+                console.error('기본 카메라 모드 오류:', error);
+                updateStatus('❌ 카메라 접근이 거부되었습니다.', 'error');
+            }
         }
 
         // DeepAR 모드 초기화
         async function initializeDeepAR() {
             try {
-                // DeepAR 라이브러리 로딩 확인
-                if (typeof DeepAR === 'undefined') {
-                    updateStatus('⏳ DeepAR 라이브러리 로딩 중...', 'deepar');
-                    
-                    for (let i = 0; i < 20; i++) {
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        if (typeof DeepAR !== 'undefined') break;
-                        updateStatus(`⏳ DeepAR 로딩 중... (${i + 1}/20)`, 'deepar');
-                    }
-                    
-                    if (typeof DeepAR === 'undefined') {
-                        throw new Error('DeepAR 라이브러리를 로드할 수 없습니다. 인터넷 연결을 확인해주세요.');
-                    }
-                }
-
-                updateStatus('🔑 DeepAR API 키 확인 중...', 'deepar');
+                updateStatus('🔍 DeepAR 환경 확인 중...', 'deepar');
                 
-                if (!DEEPAR_API_KEY || DEEPAR_API_KEY.length < 50) {
-                    throw new Error('DeepAR API 키가 올바르지 않습니다.');
+                // 브라우저 호환성 확인
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('이 브라우저는 카메라를 지원하지 않습니다.');
                 }
 
-                video = document.getElementById('video');
+                // DeepAR 라이브러리 로딩 확인
+                updateStatus('⏳ DeepAR 라이브러리 로딩 중...', 'deepar');
+                
+                for (let i = 0; i < 30; i++) {
+                    if (typeof DeepAR !== 'undefined') {
+                        updateStatus('✅ DeepAR 라이브러리 로드 완료', 'deepar');
+                        break;
+                    }
+                    updateStatus('⏳ DeepAR 로딩 중... (' + (i + 1) + '/30)', 'deepar');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                if (typeof DeepAR === 'undefined') {
+                    throw new Error('DeepAR 라이브러리를 로드할 수 없습니다. 인터넷 연결 상태를 확인해주세요.');
+                }
+
+                updateStatus('🔑 DeepAR API 키 검증 중...', 'deepar');
+                
+                // API 키 검증
+                console.log('DeepAR API Key 길이:', DEEPAR_API_KEY.length);
+                console.log('DeepAR API Key 첫 20자:', DEEPAR_API_KEY.substring(0, 20));
+                
+                if (!DEEPAR_API_KEY || DEEPAR_API_KEY.length < 70) {
+                    throw new Error('DeepAR API 키가 올바르지 않습니다. 현재 길이: ' + DEEPAR_API_KEY.length + ', 필요: 70자 이상');
+                }
+
                 canvas = document.getElementById('canvas');
                 
                 updateStatus('🚀 DeepAR 엔진 초기화 중...', 'deepar');
 
+                // DeepAR 초기화
                 deepAR = new DeepAR({
                     licenseKey: DEEPAR_API_KEY,
                     canvas: canvas,
                     deeparWasmPath: 'https://cdn.deepar.ai/js/',
                     callbacks: {
-                        onInitialize: async () => {
+                        onInitialize: function() {
                             console.log('✅ DeepAR 초기화 완료');
                             updateStatus('📹 카메라 시작 중...', 'deepar');
                             
-                            try {
-                                await deepAR.startCamera(true);
+                            // 카메라 시작
+                            deepAR.startCamera(true).then(function() {
                                 setupControls();
                                 isRunning = true;
-                                updateStatus('✨ DeepAR 프리미엄 모드 준비 완료! 고급 얼굴 추적 활성화', 'success');
-                            } catch (cameraError) {
+                                updateStatus('🎉 DeepAR 프리미엄 모드 완전 활성화!', 'success');
+                            }).catch(function(cameraError) {
                                 console.error('DeepAR 카메라 오류:', cameraError);
-                                updateStatus('❌ 카메라 접근이 거부되었습니다.', 'error');
-                            }
+                                updateStatus('❌ 카메라 접근 실패. 권한을 확인해주세요.', 'error');
+                            });
                         },
-                        onCameraPermissionAsked: () => {
+                        onCameraPermissionAsked: function() {
                             updateStatus('📹 카메라 권한을 허용해주세요', 'deepar');
                         },
-                        onCameraPermissionGranted: () => {
-                            updateStatus('✅ 카메라 권한이 허용되었습니다', 'success');
+                        onCameraPermissionGranted: function() {
+                            updateStatus('✅ 카메라 권한 허용됨', 'deepar');
                         },
-                        onCameraPermissionDenied: () => {
+                        onCameraPermissionDenied: function() {
                             updateStatus('❌ 카메라 권한이 거부되었습니다', 'error');
                         },
-                        onFaceVisibilityChanged: (visible) => {
+                        onFaceVisibilityChanged: function(visible) {
                             if (visible) {
-                                updateStatus('👤 얼굴 감지됨! DeepAR 고급 추적 활성화', 'success');
+                                updateStatus('👤 얼굴 감지! DeepAR 고급 추적 활성화', 'success');
                             } else {
-                                updateStatus('얼굴을 화면 중앙에 맞춰주세요', 'deepar');
+                                updateStatus('👀 얼굴을 화면 중앙에 맞춰주세요', 'deepar');
                             }
                         },
-                        onError: (error) => {
-                            console.error('DeepAR 오류:', error);
-                            updateStatus(`❌ DeepAR 오류: ${error.toString()}`, 'error');
+                        onVideoStarted: function() {
+                            console.log('✅ DeepAR 비디오 시작됨');
+                        },
+                        onError: function(error) {
+                            console.error('DeepAR 런타임 오류:', error);
+                            updateStatus('❌ DeepAR 오류: ' + error, 'error');
+                            
+                            // 구체적 오류 메시지
+                            if (error.includes('license') || error.includes('key')) {
+                                updateStatus('🔑 라이선스 오류: API 키를 확인해주세요', 'error');
+                            } else if (error.includes('camera')) {
+                                updateStatus('📹 카메라 오류: 다른 앱에서 사용 중일 수 있습니다', 'error');
+                            }
                         }
                     }
                 });
 
             } catch (error) {
-                console.error('DeepAR 초기화 오류:', error);
-                updateStatus(`❌ DeepAR 초기화 실패: ${error.message}`, 'error');
+                console.error('DeepAR 초기화 실패:', error);
+                updateStatus('❌ DeepAR 초기화 실패: ' + error.message, 'error');
                 
-                setTimeout(async () => {
-                    updateStatus('🔄 기본 모드로 전환 중...', 'normal');
+                setTimeout(async function() {
+                    updateStatus('🔄 기본 모드(MediaPipe)로 자동 전환 중...', 'normal');
                     currentMode = 'basic';
+                    
+                    // 모드 표시기 업데이트
+                    const modeIndicator = document.getElementById('modeIndicator');
+                    const appTitle = document.getElementById('appTitle');
+                    modeIndicator.textContent = '🎨 기본 모드 (자동 전환됨)';
+                    modeIndicator.className = 'mode-indicator basic';
+                    appTitle.textContent = '기본 가상 메이크업';
+                    
                     await initializeBasicMode();
                 }, 3000);
             }
         }
 
-        // 메이크업 그리기 루프 (기본 모드용)
-        function drawLoop() {
+        // MediaPipe 얼굴 감지 결과 처리
+        function onMediaPipeResults(results) {
+            if (!isRunning || !ctx || currentMode !== 'basic') return;
+
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                updateStatus('👤 얼굴이 인식되었어요! 컬러를 선택해보세요', 'success');
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                if (blushIntensity > 0) {
+                    applyBlush(landmarks);
+                }
+
+                if (lipIntensity > 0) {
+                    applyLipstick(landmarks);
+                }
+            } else {
+                updateStatus('얼굴을 화면 중앙에 맞춰주세요', 'normal');
+            }
+
+            ctx.restore();
+        }
+
+        // 립스틱 적용 (MediaPipe)
+        function applyLipstick(landmarks) {
+            ctx.save();
+            ctx.globalAlpha = lipIntensity;
+            ctx.fillStyle = 'rgb(' + currentLipColor[0] + ', ' + currentLipColor[1] + ', ' + currentLipColor[2] + ')';
+            ctx.globalCompositeOperation = 'multiply';
+
+            drawLipArea(landmarks, LIPS_UPPER);
+            drawLipArea(landmarks, LIPS_LOWER);
+
+            ctx.restore();
+        }
+
+        // 블러셔 적용 (MediaPipe)
+        function applyBlush(landmarks) {
+            ctx.save();
+            ctx.globalAlpha = blushIntensity * 0.6;
+            
+            drawBlushArea(landmarks, LEFT_CHEEK);
+            drawBlushArea(landmarks, RIGHT_CHEEK);
+
+            ctx.restore();
+        }
+
+        // 립 영역 그리기
+        function drawLipArea(landmarks, indices) {
+            if (indices.length === 0) return;
+            
+            ctx.beginPath();
+            for (let i = 0; i < indices.length; i++) {
+                const index = indices[i];
+                if (landmarks[index]) {
+                    const x = landmarks[index].x * canvas.width;
+                    const y = landmarks[index].y * canvas.height;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // 블러셔 영역 그리기
+        function drawBlushArea(landmarks, indices) {
+            if (indices.length === 0) return;
+            
+            let centerX = 0;
+            let centerY = 0;
+            let validPoints = 0;
+            
+            for (let i = 0; i < indices.length; i++) {
+                const index = indices[i];
+                if (landmarks[index]) {
+                    centerX += landmarks[index].x * canvas.width;
+                    centerY += landmarks[index].y * canvas.height;
+                    validPoints++;
+                }
+            }
+            
+            if (validPoints === 0) return;
+            
+            centerX /= validPoints;
+            centerY /= validPoints;
+            
+            const gradient = ctx.createRadialGradient(
+                centerX, centerY, 0,
+                centerX, centerY, 40
+            );
+            
+            gradient.addColorStop(0, 'rgba(' + currentBlushColor[0] + ', ' + currentBlushColor[1] + ', ' + currentBlushColor[2] + ', 0.8)');
+            gradient.addColorStop(0.7, 'rgba(' + currentBlushColor[0] + ', ' + currentBlushColor[1] + ', ' + currentBlushColor[2] + ', 0.3)');
+            gradient.addColorStop(1, 'rgba(' + currentBlushColor[0] + ', ' + currentBlushColor[1] + ', ' + currentBlushColor[2] + ', 0)');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 40, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        // 간단한 메이크업 루프 (얼굴 감지 없음)
+        function drawSimpleLoop() {
             if (!isRunning || currentMode !== 'basic') return;
             
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -542,7 +789,7 @@
             if (lipIntensity > 0) {
                 ctx.save();
                 ctx.globalAlpha = lipIntensity;
-                ctx.fillStyle = `rgb(${currentLipColor[0]}, ${currentLipColor[1]}, ${currentLipColor[2]})`;
+                ctx.fillStyle = 'rgb(' + currentLipColor[0] + ', ' + currentLipColor[1] + ', ' + currentLipColor[2] + ')';
                 ctx.beginPath();
                 ctx.ellipse(centerX, centerY + 60, 40, 20, 0, 0, 2 * Math.PI);
                 ctx.fill();
@@ -555,12 +802,12 @@
                 ctx.globalAlpha = blushIntensity * 0.6;
                 
                 const gradient1 = ctx.createRadialGradient(centerX - 100, centerY - 20, 0, centerX - 100, centerY - 20, 35);
-                gradient1.addColorStop(0, `rgba(${currentBlushColor[0]}, ${currentBlushColor[1]}, ${currentBlushColor[2]}, 0.8)`);
-                gradient1.addColorStop(1, `rgba(${currentBlushColor[0]}, ${currentBlushColor[1]}, ${currentBlushColor[2]}, 0)`);
+                gradient1.addColorStop(0, 'rgba(' + currentBlushColor[0] + ', ' + currentBlushColor[1] + ', ' + currentBlushColor[2] + ', 0.8)');
+                gradient1.addColorStop(1, 'rgba(' + currentBlushColor[0] + ', ' + currentBlushColor[1] + ', ' + currentBlushColor[2] + ', 0)');
                 
                 const gradient2 = ctx.createRadialGradient(centerX + 100, centerY - 20, 0, centerX + 100, centerY - 20, 35);
-                gradient2.addColorStop(0, `rgba(${currentBlushColor[0]}, ${currentBlushColor[1]}, ${currentBlushColor[2]}, 0.8)`);
-                gradient2.addColorStop(1, `rgba(${currentBlushColor[0]}, ${currentBlushColor[1]}, ${currentBlushColor[2]}, 0)`);
+                gradient2.addColorStop(0, 'rgba(' + currentBlushColor[0] + ', ' + currentBlushColor[1] + ', ' + currentBlushColor[2] + ', 0.8)');
+                gradient2.addColorStop(1, 'rgba(' + currentBlushColor[0] + ', ' + currentBlushColor[1] + ', ' + currentBlushColor[2] + ', 0)');
                 
                 ctx.fillStyle = gradient1;
                 ctx.beginPath();
@@ -575,27 +822,36 @@
                 ctx.restore();
             }
             
-            requestAnimationFrame(drawLoop);
+            requestAnimationFrame(drawSimpleLoop);
         }
 
         // 컨트롤 설정
         function setupControls() {
-            document.querySelectorAll('#lipColors .color-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    document.querySelectorAll('#lipColors .color-btn').forEach(b => b.classList.remove('active'));
+            // 립스틱 컬러 선택
+            const lipColorButtons = document.querySelectorAll('#lipColors .color-btn');
+            for (let i = 0; i < lipColorButtons.length; i++) {
+                lipColorButtons[i].addEventListener('click', function() {
+                    for (let j = 0; j < lipColorButtons.length; j++) {
+                        lipColorButtons[j].classList.remove('active');
+                    }
                     this.classList.add('active');
                     currentLipColor = this.dataset.color.split(',').map(Number);
                 });
-            });
+            }
 
-            document.querySelectorAll('#blushColors .color-btn').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    document.querySelectorAll('#blushColors .color-btn').forEach(b => b.classList.remove('active'));
+            // 블러셔 컬러 선택
+            const blushColorButtons = document.querySelectorAll('#blushColors .color-btn');
+            for (let i = 0; i < blushColorButtons.length; i++) {
+                blushColorButtons[i].addEventListener('click', function() {
+                    for (let j = 0; j < blushColorButtons.length; j++) {
+                        blushColorButtons[j].classList.remove('active');
+                    }
                     this.classList.add('active');
                     currentBlushColor = this.dataset.color.split(',').map(Number);
                 });
-            });
+            }
 
+            // 슬라이더
             document.getElementById('lipIntensity').addEventListener('input', function() {
                 lipIntensity = parseFloat(this.value);
             });
@@ -606,11 +862,11 @@
         }
 
         // 상태 업데이트
-        function updateStatus(message, type = 'normal') {
+        function updateStatus(message, type) {
             const status = document.getElementById('status');
             status.textContent = message;
             status.className = 'status';
-            if (type !== 'normal') {
+            if (type && type !== 'normal') {
                 status.classList.add(type);
             }
         }
@@ -622,18 +878,28 @@
                 deepAR.takeScreenshot().then(function(screenshot) {
                     const a = document.createElement('a');
                     a.href = screenshot;
-                    a.download = `deepar-makeup-${Date.now()}.png`;
+                    a.download = 'deepar-makeup-' + Date.now() + '.png';
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
                     
                     updateStatus('📸 DeepAR 프리미엄 사진이 저장되었습니다!', 'success');
-                    setTimeout(() => updateStatus('✨ DeepAR 프리미엄 모드 준비 완료!', 'success'), 2000);
+                    setTimeout(function() {
+                        updateStatus('✨ DeepAR 프리미엄 모드 준비 완료!', 'success');
+                    }, 2000);
+                }).catch(function(error) {
+                    console.error('DeepAR 캡처 오류:', error);
+                    updateStatus('❌ 사진 캡처에 실패했습니다.', 'error');
                 });
             } else {
                 // 기본 모드 캡처
                 const tempCanvas = document.createElement('canvas');
                 const tempCtx = tempCanvas.getContext('2d');
+                
+                if (!video || !video.videoWidth) {
+                    updateStatus('❌ 비디오가 준비되지 않았습니다.', 'error');
+                    return;
+                }
                 
                 tempCanvas.width = video.videoWidth;
                 tempCanvas.height = video.videoHeight;
@@ -643,20 +909,24 @@
                 tempCtx.drawImage(video, -tempCanvas.width, 0, tempCanvas.width, tempCanvas.height);
                 tempCtx.restore();
                 
-                tempCtx.drawImage(canvas, 0, 0);
+                if (canvas) {
+                    tempCtx.drawImage(canvas, 0, 0);
+                }
                 
                 tempCanvas.toBlob(function(blob) {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `basic-makeup-${Date.now()}.png`;
+                    a.download = 'basic-makeup-' + Date.now() + '.png';
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
                     
                     updateStatus('📸 기본 모드 사진이 저장되었습니다!', 'success');
-                    setTimeout(() => updateStatus('✨ 기본 모드 준비 완료! 컬러를 선택해보세요', 'success'), 2000);
+                    setTimeout(function() {
+                        updateStatus('✨ 기본 모드 준비 완료! 컬러를 선택해보세요', 'success');
+                    }, 2000);
                 }, 'image/png');
             }
         }
@@ -668,7 +938,7 @@
             document.getElementById('lipIntensity').value = 0;
             document.getElementById('blushIntensity').value = 0;
             
-            setTimeout(() => {
+            setTimeout(function() {
                 lipIntensity = 0.6;
                 blushIntensity = 0.4;
                 document.getElementById('lipIntensity').value = 0.6;
@@ -681,12 +951,33 @@
             isRunning = false;
             
             if (currentMode === 'deepar' && deepAR) {
-                deepAR.shutdown();
+                try {
+                    deepAR.shutdown();
+                } catch (e) {
+                    console.log('DeepAR shutdown error:', e);
+                }
                 deepAR = null;
             }
             
+            if (currentMode === 'basic') {
+                if (camera) {
+                    try {
+                        camera.stop();
+                    } catch (e) {
+                        console.log('Camera stop error:', e);
+                    }
+                    camera = null;
+                }
+                if (faceMesh) {
+                    faceMesh = null;
+                }
+            }
+            
             if (video && video.srcObject) {
-                video.srcObject.getTracks().forEach(track => track.stop());
+                video.srcObject.getTracks().forEach(function(track) {
+                    track.stop();
+                });
+                video.srcObject = null;
             }
             
             currentMode = 'basic';
@@ -714,7 +1005,7 @@
         console.log('✅ ColorMatch AI 하이브리드 버전 준비 완료!');
         console.log('🔑 DeepAR API Key:', DEEPAR_API_KEY.substring(0, 20) + '...');
         console.log('⌨️ 단축키: ESC=홈, C=캡처, R=리셋');
-        console.log('🎯 기본 모드: 즉시 작동, DeepAR 모드: 고급 얼굴 추적');
+        console.log('🎯 기본 모드: MediaPipe 얼굴 추적, DeepAR 모드: 고급 얼굴 추적');
     </script>
 </body>
 </html>
